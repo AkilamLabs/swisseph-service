@@ -32,4 +32,6 @@ HEALTHCHECK --interval=15s --timeout=3s --start-period=5s \
         r=urllib.request.urlopen(f'http://127.0.0.1:{os.environ[\"PORT\"]}/v1/health', timeout=2); \
         sys.exit(0 if r.status==200 else 1)"
 
-CMD ["sh", "-c", "uvicorn swisseph_service.main:app --host 0.0.0.0 --port ${PORT}"]
+# Two workers: swisseph state is per-process (configure() runs per batch under
+# each process lock), so workers are safe and remove cross-request serialization.
+CMD ["sh", "-c", "uvicorn swisseph_service.main:app --host 0.0.0.0 --port ${PORT} --workers ${WORKERS:-2}"]

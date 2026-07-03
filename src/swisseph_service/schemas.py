@@ -122,6 +122,15 @@ class CrossingsResponse(BaseModel):
     crossings: list[Crossing]
 
 
+class CrossingsBatchRequest(BaseModel):
+    queries: list[CrossingsRequest] = Field(min_length=1, max_length=64)
+
+
+class CrossingsBatchResponse(BaseModel):
+    # results[i] corresponds to queries[i]
+    results: list[CrossingsResponse]
+
+
 class AyanamsaRequest(BaseModel):
     jds: list[float] = Field(min_length=1, max_length=MAX_POSITION_POINTS)
     ayanamsa: Ayanamsa = "lahiri"

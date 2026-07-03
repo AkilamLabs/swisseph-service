@@ -35,6 +35,7 @@ MEAN_NODE=10, TRUE_NODE=11). Ayanamsa: `lahiri` (default) | `raman` | `kp`.
 | `POST /v1/houses` | batch ascendant / Placidus cusps (structured `polar_undefined` error) |
 | `POST /v1/rise-set` | batch rise/set, flag-parameterized (disc center, refraction), optional Sun true altitude at event |
 | `POST /v1/crossings` | find times where a body longitude / difference / sum crosses target angles (grid or list), bisected to `tolerance_jd` |
+| `POST /v1/crossings-batch` | many crossing queries in one request; queries over the same window/bodies share one ephemeris sampling pass |
 | `POST /v1/ayanamsa` | batch ayanamsa values |
 | `POST /v1/time/julday`, `POST /v1/time/revjul` | calendar ↔ Julian day |
 
@@ -54,7 +55,7 @@ events (heliacal work).
 # local
 python -m venv .venv && .venv/bin/pip install -e '.[dev]'
 bash scripts/fetch_ephe.sh          # downloads semo_18.se1 + sepl_18.se1
-SE_EPHE_PATH=./ephe .venv/bin/uvicorn swisseph_service.main:app --port 8001
+SE_EPHE_PATH=./ephe .venv/bin/uvicorn swisseph_service.main:app --port 8001 --workers 2
 
 # docker (ephe data baked in)
 docker build -t swisseph-service .
@@ -62,7 +63,8 @@ docker run -p 8001:8001 swisseph-service
 ```
 
 Environment: `SE_EPHE_PATH` (default `/app/ephe` in Docker), `PORT`
-(default 8001), optional `SERVICE_TOKEN` (require `X-Service-Token` header
+(default 8001), `WORKERS` (default 2 in Docker; swisseph state is
+per-process so multiple workers are safe), optional `SERVICE_TOKEN` (require `X-Service-Token` header
 on all endpoints except health).
 
 ## Tests

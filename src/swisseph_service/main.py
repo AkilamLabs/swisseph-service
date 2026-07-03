@@ -10,17 +10,32 @@ so this is both the correctness requirement and a performance win.
 """
 from __future__ import annotations
 
+import logging
 import os
+import time
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import ORJSONResponse
 
 from . import core, crossings, rise_set, schemas
+
+logger = logging.getLogger("swisseph_service")
 
 app = FastAPI(
     title="swisseph-service",
     description="Thin AGPL-3.0 HTTP wrapper around Swiss Ephemeris (batch-first).",
-    version="0.1.0",
+    version="0.2.0",
+    default_response_class=ORJSONResponse,
 )
+
+
+@app.middleware("http")
+async def _timing_log(request, call_next):
+    t0 = time.perf_counter()
+    response = await call_next(request)
+    logger.info("%s %s -> %s in %.1f ms", request.method, request.url.path,
+                response.status_code, (time.perf_counter() - t0) * 1000)
+    return response
 
 _service_token = os.environ.get("SERVICE_TOKEN")  # optional shared secret
 
@@ -103,23 +118,44 @@ def rise_set_batch(req: schemas.RiseSetRequest) -> schemas.RiseSetResponse:
     return schemas.RiseSetResponse(results=results)
 
 
-@app.post("/v1/crossings", response_model=schemas.CrossingsResponse)
-def crossings_solve(req: schemas.CrossingsRequest) -> schemas.CrossingsResponse:
+def _solve_crossings_locked(req: schemas.CrossingsRequest,
+                            eval_cache: dict | None = None) -> schemas.CrossingsResponse:
+    """Solve one crossings query. Caller must hold core.swe_lock; this applies
+    configure() for the query's ayanamsa itself (batch queries may differ)."""
     if req.angle.kind in ("difference", "sum") and req.angle.body2 is None:
         raise HTTPException(422, "body2 required for difference/sum angles")
+    core.configure(req.angle.ayanamsa)
     try:
-        with core.swe_lock:
-            core.configure(req.angle.ayanamsa)
-            found = crossings.find_crossings(
-                jd_start=req.jd_start, jd_end=req.jd_end,
-                kind=req.angle.kind, body=req.angle.body, body2=req.angle.body2,
-                frame=req.angle.frame,
-                grid=req.targets.grid, targets=req.targets.list_,
-                direction=req.direction, tolerance_jd=req.tolerance_jd,
-            )
+        found = crossings.find_crossings(
+            jd_start=req.jd_start, jd_end=req.jd_end,
+            kind=req.angle.kind, body=req.angle.body, body2=req.angle.body2,
+            frame=req.angle.frame,
+            grid=req.targets.grid, targets=req.targets.list_,
+            direction=req.direction, tolerance_jd=req.tolerance_jd,
+            ayanamsa=req.angle.ayanamsa, eval_cache=eval_cache,
+        )
     except crossings.CrossingError as e:
         raise HTTPException(422, str(e))
     return schemas.CrossingsResponse(crossings=[schemas.Crossing(**c) for c in found])
+
+
+@app.post("/v1/crossings", response_model=schemas.CrossingsResponse)
+def crossings_solve(req: schemas.CrossingsRequest) -> schemas.CrossingsResponse:
+    with core.swe_lock:
+        return _solve_crossings_locked(req)
+
+
+@app.post("/v1/crossings-batch", response_model=schemas.CrossingsBatchResponse)
+def crossings_solve_batch(req: schemas.CrossingsBatchRequest) -> schemas.CrossingsBatchResponse:
+    """Solve many crossing queries in one request under one lock acquisition.
+
+    Queries share a position-evaluation cache, so queries over the same window
+    and bodies (e.g. tithi and karana, both Moon−Sun) sample the ephemeris
+    once instead of once per query."""
+    eval_cache: dict = {}
+    with core.swe_lock:
+        results = [_solve_crossings_locked(q, eval_cache) for q in req.queries]
+    return schemas.CrossingsBatchResponse(results=results)
 
 
 @app.post("/v1/ayanamsa", response_model=schemas.AyanamsaResponse)

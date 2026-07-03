@@ -31,23 +31,35 @@ class CrossingError(ValueError):
     pass
 
 
-def _make_angle_fn(kind: str, body: int, body2: int | None, frame: str) -> Callable[[float], float]:
+def _make_angle_fn(kind: str, body: int, body2: int | None, frame: str,
+                   ayanamsa: str = "lahiri",
+                   eval_cache: dict | None = None) -> Callable[[float], float]:
     """Angle in degrees at jd. Caller must hold core.swe_lock with configure()
-    already applied for the requested ayanamsa."""
+    already applied for the requested ayanamsa.
+
+    eval_cache (optional, keyed (jd, body, frame, ayanamsa)) lets a batch of
+    queries share position evaluations — e.g. tithi and karana solve over the
+    same Moon−Sun samples, so the second query's sampling pass is nearly free.
+    """
+    def get_lon(jd: float, b: int) -> float:
+        if eval_cache is None:
+            return core.position_locked(jd, b, frame, speed=False)[0]
+        key = (jd, b, frame, ayanamsa)
+        lon = eval_cache.get(key)
+        if lon is None:
+            lon = core.position_locked(jd, b, frame, speed=False)[0]
+            eval_cache[key] = lon
+        return lon
+
     if kind == "body":
         def fn(jd: float) -> float:
-            lon, _ = core.position_locked(jd, body, frame, speed=False)
-            return lon % 360.0
+            return get_lon(jd, body) % 360.0
     elif kind == "difference":
         def fn(jd: float) -> float:
-            a, _ = core.position_locked(jd, body, frame, speed=False)
-            b, _ = core.position_locked(jd, body2, frame, speed=False)
-            return (a - b) % 360.0
+            return (get_lon(jd, body) - get_lon(jd, body2)) % 360.0
     elif kind == "sum":
         def fn(jd: float) -> float:
-            a, _ = core.position_locked(jd, body, frame, speed=False)
-            b, _ = core.position_locked(jd, body2, frame, speed=False)
-            return (a + b) % 360.0
+            return (get_lon(jd, body) + get_lon(jd, body2)) % 360.0
     else:
         raise CrossingError(f"unknown angle kind: {kind}")
     return fn
@@ -69,6 +81,8 @@ def find_crossings(
     targets: list[float] | None,
     direction: str = "any",
     tolerance_jd: float = 1e-9,
+    ayanamsa: str = "lahiri",
+    eval_cache: dict | None = None,
 ) -> list[dict]:
     if jd_end <= jd_start:
         raise CrossingError("jd_end must be after jd_start")
@@ -82,7 +96,7 @@ def find_crossings(
     moon_involved = core.MOON in (body, body2)
     step = STEP_MOON if moon_involved else STEP_DEFAULT
 
-    angle_fn = _make_angle_fn(kind, body, body2, frame)
+    angle_fn = _make_angle_fn(kind, body, body2, frame, ayanamsa, eval_cache)
 
     # Sample and unwrap.
     n_steps = max(2, math.ceil((jd_end - jd_start) / step) + 1)
