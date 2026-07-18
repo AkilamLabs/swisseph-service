@@ -9,6 +9,10 @@ rise/set events, ayanamsa values, and generic longitude-crossing
 root-finding — over a small JSON API designed to be co-located with a
 consuming application (localhost or an internal Docker network).
 
+This service is the ephemeris backend for
+[AstroYogam](https://astroyogam.in/), a bilingual (Tamil + English)
+Thirukanitha panchangam and Vedic birth chart tool.
+
 ## Why this exists (licensing)
 
 Swiss Ephemeris and pyswisseph are licensed **AGPL-3.0** (Astrodienst also
