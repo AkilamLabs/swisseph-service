@@ -10,6 +10,7 @@ so this is both the correctness requirement and a performance win.
 """
 from __future__ import annotations
 
+import hmac
 import logging
 import os
 import time
@@ -45,8 +46,10 @@ if _service_token:
 
     class _TokenMiddleware(BaseHTTPMiddleware):
         async def dispatch(self, request: Request, call_next):
+            # Constant-time, on bytes: compare_digest rejects non-ASCII str.
+            sent = (request.headers.get("x-service-token") or "").encode("utf-8", "surrogateescape")
             if request.url.path != "/v1/health" and \
-                    request.headers.get("x-service-token") != _service_token:
+                    not hmac.compare_digest(sent, _service_token.encode("utf-8")):
                 from starlette.responses import JSONResponse
                 return JSONResponse({"detail": "invalid service token"}, status_code=401)
             return await call_next(request)
