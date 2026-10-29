@@ -7,9 +7,18 @@ on:
   pull_request:
     branches: [main]
 
+# Least privilege by default; only the publish job may write packages.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -26,10 +35,23 @@ jobs:
         env:
           SE_EPHE_PATH: ./ephe
 
+  docker-build:
+    # A clean-clone image build on every change, so a broken Dockerfile is
+    # caught before a release tag tries to publish it.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+
   publish:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: test
+    needs: [test, docker-build]
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       packages: write
