@@ -2,10 +2,15 @@
 # this image redistributes Swiss Ephemeris under the same license.
 FROM python:3.12-slim AS build
 
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
+# build-essential is required to compile the pyswisseph C extension: recent
+# pyswisseph releases (e.g. 2.10.3.2) publish only an sdist for cp312, so pip
+# builds the wheel from source. Lives in the build stage only — the multi-stage
+# final image copies just site-packages, so the runtime image stays slim.
+RUN apt-get update && apt-get install -y --no-install-recommends curl build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+COPY ephe /app/ephe
 COPY scripts/fetch_ephe.sh scripts/
 RUN bash scripts/fetch_ephe.sh /app/ephe
 
