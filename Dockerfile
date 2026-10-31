@@ -1,6 +1,6 @@
 # swisseph-service — AGPL-3.0 (see LICENSE). Ephemeris data files are baked in;
 # this image redistributes Swiss Ephemeris under the same license.
-FROM python:3.12-slim AS build
+FROM python:3.15-slim AS build
 
 # build-essential is required to compile the pyswisseph C extension: recent
 # pyswisseph releases (e.g. 2.10.3.2) publish only an sdist for cp312, so pip
@@ -21,7 +21,7 @@ COPY src ./src
 # lines must stay on the same Python: the venv links to its interpreter.
 RUN python -m venv /opt/venv && /opt/venv/bin/pip install --no-cache-dir .
 
-FROM python:3.12-slim
+FROM python:3.15-slim
 
 RUN useradd --create-home appuser
 WORKDIR /app
