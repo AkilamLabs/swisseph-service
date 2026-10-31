@@ -5,7 +5,7 @@ FROM python:3.12-slim AS build
 # build-essential is required to compile the pyswisseph C extension: recent
 # pyswisseph releases (e.g. 2.10.3.2) publish only an sdist for cp312, so pip
 # builds the wheel from source. Lives in the build stage only — the multi-stage
-# final image copies just site-packages, so the runtime image stays slim.
+# final image copies just the virtualenv, so the runtime image stays slim.
 RUN apt-get update && apt-get install -y --no-install-recommends curl build-essential \
     && rm -rf /var/lib/apt/lists/*
 
@@ -16,17 +16,20 @@ RUN bash scripts/fetch_ephe.sh /app/ephe
 
 COPY pyproject.toml README.md LICENSE ./
 COPY src ./src
-RUN pip install --no-cache-dir .
+# A virtualenv at a fixed path, so the final stage copies it without naming the
+# Python minor version (a base-image bump must not break the COPY). Both FROM
+# lines must stay on the same Python: the venv links to its interpreter.
+RUN python -m venv /opt/venv && /opt/venv/bin/pip install --no-cache-dir .
 
 FROM python:3.12-slim
 
 RUN useradd --create-home appuser
 WORKDIR /app
-COPY --from=build /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
-COPY --from=build /usr/local/bin/uvicorn /usr/local/bin/uvicorn
+COPY --from=build /opt/venv /opt/venv
 COPY --from=build /app/ephe /app/ephe
 COPY LICENSE README.md ./
 
+ENV PATH=/opt/venv/bin:$PATH
 ENV SE_EPHE_PATH=/app/ephe
 ENV PORT=8001
 USER appuser
