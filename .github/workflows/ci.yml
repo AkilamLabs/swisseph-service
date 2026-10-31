@@ -25,7 +25,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Cache ephemeris data
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ephe
           key: ephe-se1-v1
